@@ -1,0 +1,29 @@
+# Build output
+/dist/
+
+# App-generated runtime files (written next to the exe when run from a
+# build output dir inside the repo during local testing)
+*.log
+ocr_config.json
+ocr_metrics.json
+ocr_helper.log*
+tesseract_installer.exe
+
+# Go build/test artifacts
+*.exe
+*.exe~
+*.test
+*.out
+
+# go.work files are for local multi-module dev setups; don't commit them
+go.work
+go.work.sum
+
+# IDE / editor
+.vscode/
+.idea/
+*.swp
+
+# OS cruft
+Thumbs.db
+.DS_Store

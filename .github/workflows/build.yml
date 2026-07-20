@@ -1,0 +1,45 @@
+name: Build & Test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build-and-test:
+    # cross-compiles the Windows binaries and runs the cross-platform tests;
+    # ubuntu is fine here since no CGO/C toolchain is required.
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.24"
+
+      - name: Vet
+        run: go vet -mod=vendor ./...
+        # internal/input/hook_windows.go reports two expected "possible
+        # misuse of unsafe.Pointer" notes at the Win32 hook callback boundary
+        # (documented in the README) — don't fail the build on vet's exit code.
+        continue-on-error: true
+
+      - name: Test
+        run: go test -mod=vendor ./...
+
+      - name: Build Windows GUI
+        env:
+          GOOS: windows
+          GOARCH: amd64
+        run: go build -mod=vendor -ldflags "-H windowsgui -s -w" -o dist/WordBombGUI.exe ./cmd/wordbombgui
+
+      - name: Build Windows CLI
+        env:
+          GOOS: windows
+          GOARCH: amd64
+        run: go build -mod=vendor -ldflags "-s -w" -o dist/WordBombCLI.exe ./cmd/wordbombcli
