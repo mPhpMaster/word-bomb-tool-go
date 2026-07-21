@@ -54,6 +54,16 @@ Two executables:
   required — everything is pure Go using Win32 syscalls.
 - **The CLI** needs neither Tesseract nor Windows.
 
+## Installation
+
+**Easiest:** grab `WordBombTool-Setup.exe` from the
+[Releases](../../releases) page and run it. It installs both executables,
+adds Start Menu / optional desktop shortcuts, an optional "add CLI to PATH"
+task, and a clean uninstaller — no admin rights required, and no separate
+runtime to install (the Go binaries are statically linked).
+
+**From source:** see [Build](#build) below.
+
 ## Build
 
 ```bash
@@ -92,6 +102,18 @@ Run the tests (the cross-platform packages — `config`, `datamuse`, `suggest`,
 ```bash
 go test ./...
 ```
+
+### Building the installer
+
+Requires [Inno Setup 6](https://jrsoftware.org/isinfo.php)
+(`winget install JRSoftware.InnoSetup`):
+
+```powershell
+build.bat
+& "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" installer\WordBombTool.iss
+```
+
+Output: `dist\installer\WordBombTool-Setup.exe`.
 
 ## Usage
 
