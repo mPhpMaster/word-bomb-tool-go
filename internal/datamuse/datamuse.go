@@ -85,10 +85,13 @@ func (c *Client) Suggestions(letters, mode string) []string {
 		return nil
 	}
 
+	// Datamuse often returns the query itself as the top hit (e.g. "hea" for
+	// *hea*), which is not a word; never suggest the prompt letters.
+	prompt := strings.ToLower(strings.TrimSpace(letters))
 	out := make([]string, 0, len(items))
 	for _, it := range items {
 		// Keep single-word results only (no spaces), as in the original.
-		if len(strings.Fields(it.Word)) == 1 {
+		if len(strings.Fields(it.Word)) == 1 && strings.ToLower(strings.TrimSpace(it.Word)) != prompt {
 			out = append(out, it.Word)
 		}
 	}

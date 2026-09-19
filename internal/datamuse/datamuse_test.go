@@ -14,15 +14,15 @@ func TestSuggestionsParsingAndSingleWordFilter(t *testing.T) {
 			t.Errorf("expected sp=cat*, got %q", got)
 		}
 		w.Header().Set("Content-Type", "application/json")
-		// "cat nap" has a space and must be filtered out.
-		_, _ = w.Write([]byte(`[{"word":"cat"},{"word":"cats"},{"word":"cat nap"},{"word":"catalog"}]`))
+		// "cat nap" has a space and "CAT" is just the prompt letters: both are filtered out.
+		_, _ = w.Write([]byte(`[{"word":"CAT"},{"word":"cats"},{"word":"cat nap"},{"word":"catalog"}]`))
 	}))
 	defer srv.Close()
 
 	c := New()
 	c.SetBaseURL(srv.URL)
 	got := c.Suggestions("cat", "Starts With")
-	want := []string{"cat", "cats", "catalog"}
+	want := []string{"cats", "catalog"}
 	if len(got) != len(want) {
 		t.Fatalf("got %v, want %v", got, want)
 	}
