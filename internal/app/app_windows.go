@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -34,6 +35,18 @@ type App struct {
 
 	sem              chan struct{} // bounds concurrent shift/alt handlers
 	autoWatcherReset atomic.Bool
+
+	// actionMu serializes whole OCR -> fetch -> type actions (Shift, Alt+1, auto
+	// mode) so two actions never type at once (interleaved keys like "llikike").
+	// Later commands wait for the running one to finish.
+	actionMu sync.Mutex
+	// pendingManual counts Shift actions queued or running; auto mode stays out
+	// of the way meanwhile.
+	pendingManual atomic.Int32
+	// lastHandled holds the letters most recently handled by any action; auto
+	// mode skips these. Guarded by lastHandledMu.
+	lastHandledMu sync.Mutex
+	lastHandled   string
 }
 
 // New constructs the application and loads persisted state.
@@ -161,28 +174,54 @@ func (a *App) handleShiftPress() {
 		}
 		return
 	}
+	a.pendingManual.Add(1)
 	a.submit(func() {
 		defer func() {
+			a.pendingManual.Add(-1)
 			if resumeAuto {
 				a.state.Mutate(func(st *state.AppState) { st.AutoModeActive = true })
 			}
 		}()
-		a.handleShiftAsync("shift")
+		a.actionMu.Lock()
+		defer a.actionMu.Unlock()
+		a.handleShiftAsync("shift", "")
 	})
 }
 
-func (a *App) handleShiftAsync(typingSource string) {
+func (a *App) getLastHandled() string {
+	a.lastHandledMu.Lock()
+	defer a.lastHandledMu.Unlock()
+	return a.lastHandled
+}
+
+func (a *App) setLastHandled(letters string) {
+	a.lastHandledMu.Lock()
+	a.lastHandled = letters
+	a.lastHandledMu.Unlock()
+}
+
+// handleShiftAsync reads letters, fetches suggestions and types the first/next
+// word. Callers must hold actionMu. Pass letters to reuse an OCR result already
+// taken, or "" to OCR the region now.
+func (a *App) handleShiftAsync(typingSource, letters string) {
 	s := a.state.Snapshot()
 	if s.Region == nil {
 		return
 	}
 
 	a.log("Processing WBT...", "INFO")
-	letters, ok := a.ocr.PerformOCR(*s.Region)
-	if !ok || letters == "" {
+	if letters == "" {
+		var ok bool
+		letters, ok = a.ocr.PerformOCR(*s.Region)
+		if !ok {
+			letters = ""
+		}
+	}
+	if letters == "" {
 		a.log("WBT returned no characters.", "WARNING")
 		return
 	}
+	a.setLastHandled(letters)
 
 	s = a.state.Snapshot()
 	mode := config.SearchModes[clampIndex(s.CurrentModeIndex, len(config.SearchModes))]
@@ -288,13 +327,19 @@ func (a *App) handleAlt1Async() {
 	}
 
 	a.log("Processing WBT...", "INFO")
+	// Wait for any running action; hold the lock only for OCR + fetch, not the popup.
+	a.actionMu.Lock()
 	word, ok := a.ocr.PerformOCR(*s.Region)
+	var defs []string
+	if ok && word != "" {
+		defs = a.api.Definitions(word)
+	}
+	a.actionMu.Unlock()
 	if !ok || word == "" {
 		a.log("WBT returned no definitions.", "WARNING")
 		return
 	}
 
-	defs := a.api.Definitions(word)
 	a.state.Mutate(func(st *state.AppState) { st.APIStatus = a.api.Status() })
 
 	if len(defs) > 0 {
@@ -479,8 +524,6 @@ func (a *App) toggleAutoMode() {
 }
 
 func (a *App) autoModeWatcher() {
-	var lastText string
-	haveLast := false
 	var lastWarnEmpty, lastWarnGate time.Time
 
 	for {
@@ -492,8 +535,13 @@ func (a *App) autoModeWatcher() {
 		}
 
 		if a.autoWatcherReset.Swap(false) {
-			lastText = ""
-			haveLast = false
+			a.setLastHandled("")
+		}
+
+		// A Shift action is queued/running: let it finish instead of racing it.
+		if a.pendingManual.Load() > 0 {
+			time.Sleep(poll)
+			continue
 		}
 
 		letters, ok := a.ocr.PerformOCR(*s.Region)
@@ -507,7 +555,7 @@ func (a *App) autoModeWatcher() {
 			continue
 		}
 
-		if !haveLast || letters != lastText {
+		if letters != a.getLastHandled() {
 			gateOK, turnOCR := a.autoModeTurnOK()
 			if !gateOK {
 				if s.TurnRegion != nil && now.Sub(lastWarnGate) > 8*time.Second {
@@ -517,10 +565,16 @@ func (a *App) autoModeWatcher() {
 				time.Sleep(poll)
 				continue
 			}
-			a.log(fmt.Sprintf("Auto-detected: '%s'", letters), "INFO")
-			lastText = letters
-			haveLast = true
-			a.submit(func() { a.handleShiftAsync("auto") })
+			// Run inline (not in a goroutine) so the watcher waits for typing to
+			// finish before polling again.
+			a.actionMu.Lock()
+			// Re-check after waiting: Shift may have paused auto mode or already
+			// typed for these letters.
+			if a.state.Snapshot().AutoModeActive && a.pendingManual.Load() == 0 && letters != a.getLastHandled() {
+				a.log(fmt.Sprintf("Auto-detected: '%s'", letters), "INFO")
+				a.handleShiftAsync("auto", letters)
+			}
+			a.actionMu.Unlock()
 		}
 
 		time.Sleep(poll)

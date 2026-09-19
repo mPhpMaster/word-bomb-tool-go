@@ -32,7 +32,8 @@ type cacheEntry struct {
 
 // Processor performs OCR with a short-lived result cache.
 type Processor struct {
-	mu            sync.Mutex
+	mu            sync.Mutex // guards cache
+	ocrMu         sync.Mutex // one OCR at a time; later callers wait for the running one
 	cache         map[string]cacheEntry
 	tesseractPath string
 }
@@ -86,7 +87,14 @@ func (p *Processor) ClearCache() {
 
 // PerformOCR captures the region, runs the harsh (letters-only) pipeline and
 // returns lowercase letters. ok is false when nothing was recognised.
+// It waits for any OCR already in progress.
 func (p *Processor) PerformOCR(region config.Region) (letters string, ok bool) {
+	p.ocrMu.Lock()
+	defer p.ocrMu.Unlock()
+	return p.performOCR(region)
+}
+
+func (p *Processor) performOCR(region config.Region) (letters string, ok bool) {
 	start := time.Now()
 
 	img, err := capture(region)
@@ -117,8 +125,14 @@ func (p *Processor) PerformOCR(region config.Region) (letters string, ok bool) {
 
 // PerformOCRTurnGate captures the region and returns lowercase alphanumerics for
 // auto-mode "YOUR TURN" detection, trying the soft pipeline with several PSMs
-// and falling back to the harsh pipeline.
+// and falling back to the harsh pipeline. It waits for any OCR already in progress.
 func (p *Processor) PerformOCRTurnGate(region config.Region) string {
+	p.ocrMu.Lock()
+	defer p.ocrMu.Unlock()
+	return p.performOCRTurnGate(region)
+}
+
+func (p *Processor) performOCRTurnGate(region config.Region) string {
 	img, err := capture(region)
 	if err != nil {
 		logging.Errorf("Turn gate WBT error: %v", err)
