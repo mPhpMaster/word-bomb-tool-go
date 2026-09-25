@@ -7,7 +7,7 @@
 ; Output lands in dist\installer\WordBombTool-Setup.exe.
 
 #define MyAppName "Word Bomb Tool"
-#define MyAppVersion "1.0.1"
+#define MyAppVersion "1.0.2"
 #define MyAppPublisher "Word Bomb Tool"
 #define MyAppExeName "WordBombGUI.exe"
 #define MyCliExeName "WordBombCLI.exe"
