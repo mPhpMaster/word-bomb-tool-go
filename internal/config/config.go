@@ -5,6 +5,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"time"
 )
 
 // Region describes a screen rectangle to capture, mirroring the Python dict
@@ -83,6 +84,15 @@ const (
 	OCRIntervalMin = 0.1
 	OCRIntervalMax = 10.0
 	OCRTimeout     = 1 // seconds; also used as the Datamuse HTTP timeout, as in the original
+
+	// Letter OCR is only trusted when two captures in a row agree, which filters
+	// one-off misreads of transition frames (letters animating in / fading out).
+	// Up to OCRStableAttempts captures, OCRStableGap apart.
+	OCRStableAttempts = 5
+	OCRStableGap      = 120 * time.Millisecond
+	// MaxLetterChanges is how many times one action may switch to newly read
+	// letters before giving up.
+	MaxLetterChanges = 3
 
 	// TypingDelay is the default typical seconds between keystrokes.
 	TypingDelay    = 0.28

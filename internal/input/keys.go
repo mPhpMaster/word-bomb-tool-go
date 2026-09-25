@@ -11,6 +11,7 @@ const (
 	vkMenu    = 0x12 // Alt
 	vkTab     = 0x09
 	vkReturn  = 0x0D
+	vkBack    = 0x08 // Backspace
 	vkPrior   = 0x21 // Page Up
 	vkNext    = 0x22 // Page Down
 	vkDelete  = 0x2E

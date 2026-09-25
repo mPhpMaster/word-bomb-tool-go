@@ -85,3 +85,10 @@ func PressEnter() {
 	up := inputStruct{inputType: inputKeyboard, ki: keyboardInput{wVk: vkReturn, dwFlags: keyEventKeyUp}}
 	sendInputs([]inputStruct{down, up})
 }
+
+// PressBackspace presses and releases the Backspace key.
+func PressBackspace() {
+	down := inputStruct{inputType: inputKeyboard, ki: keyboardInput{wVk: vkBack}}
+	up := inputStruct{inputType: inputKeyboard, ki: keyboardInput{wVk: vkBack, dwFlags: keyEventKeyUp}}
+	sendInputs([]inputStruct{down, up})
+}

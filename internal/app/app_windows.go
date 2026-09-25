@@ -200,9 +200,44 @@ func (a *App) setLastHandled(letters string) {
 	a.lastHandledMu.Unlock()
 }
 
+// stableOCR is letter OCR that only trusts a reading seen on two captures in a
+// row. A single capture can land on a transition frame and misread letters that
+// are not really on screen. Returns "" when no two consecutive readings agree.
+func (a *App) stableOCR(region config.Region) string {
+	prev, ok := a.ocr.PerformOCR(region)
+	if !ok {
+		prev = ""
+	}
+	for i := 1; i < config.OCRStableAttempts; i++ {
+		time.Sleep(config.OCRStableGap)
+		cur, ok := a.ocr.PerformOCR(region)
+		if !ok {
+			cur = ""
+		}
+		if cur != "" && cur == prev {
+			return cur
+		}
+		prev = cur
+	}
+	return ""
+}
+
+// lettersChanged re-reads the letters and returns them if they differ from
+// expected, otherwise "".
+func (a *App) lettersChanged(region *config.Region, expected string) string {
+	if region == nil || expected == "" {
+		return ""
+	}
+	if current := a.stableOCR(*region); current != "" && current != expected {
+		return current
+	}
+	return ""
+}
+
 // handleShiftAsync reads letters, fetches suggestions and types the first/next
 // word. Callers must hold actionMu. Pass letters to reuse an OCR result already
-// taken, or "" to OCR the region now.
+// taken, or "" to OCR the region now. If the letters on screen change before the
+// word is submitted, the stale word is dropped and the new letters are used.
 func (a *App) handleShiftAsync(typingSource, letters string) {
 	s := a.state.Snapshot()
 	if s.Region == nil {
@@ -211,24 +246,34 @@ func (a *App) handleShiftAsync(typingSource, letters string) {
 
 	a.log("Processing WBT...", "INFO")
 	if letters == "" {
-		var ok bool
-		letters, ok = a.ocr.PerformOCR(*s.Region)
-		if !ok {
-			letters = ""
-		}
+		letters = a.stableOCR(*s.Region)
 	}
 	if letters == "" {
 		a.log("WBT returned no characters.", "WARNING")
 		return
 	}
+
+	for i := 0; i <= config.MaxLetterChanges; i++ {
+		newLetters := a.handleLetters(letters, typingSource, s.Region)
+		if newLetters == "" {
+			return
+		}
+		a.log(fmt.Sprintf("Letters changed on screen: '%s' -> '%s' (using new letters).", letters, newLetters), "INFO")
+		letters = newLetters
+	}
+	a.log("Letters keep changing on screen; skipped.", "WARNING")
+}
+
+// handleLetters suggests and types a word for letters; it returns the new
+// letters if they changed on screen before the word was submitted, else "".
+func (a *App) handleLetters(letters, typingSource string, region *config.Region) string {
 	a.setLastHandled(letters)
 
-	s = a.state.Snapshot()
+	s := a.state.Snapshot()
 	mode := config.SearchModes[clampIndex(s.CurrentModeIndex, len(config.SearchModes))]
 
 	if letters == s.LastOCRText && len(s.Suggestions) > 0 {
-		a.typeNextWord(typingSource)
-		return
+		return a.typeNextWord(typingSource, region)
 	}
 
 	a.state.Mutate(func(st *state.AppState) { st.LastOCRText = letters })
@@ -261,20 +306,23 @@ func (a *App) handleShiftAsync(typingSource, letters string) {
 		})
 	}
 
-	a.typeNextWord(typingSource)
+	return a.typeNextWord(typingSource, region)
 }
 
-func (a *App) typeNextWord(typingSource string) {
+// typeNextWord types the next untyped suggestion. With a region, the letters are
+// re-read before typing and before Enter; if they changed, the word is not
+// submitted (erased if already typed) and the new letters are returned.
+func (a *App) typeNextWord(typingSource string, region *config.Region) string {
 	s := a.state.Snapshot()
 	if len(s.Suggestions) == 0 {
 		a.log("No suggestions loaded.", "WARNING")
-		return
+		return ""
 	}
 
 	word, nextIdx := suggest.NextUntyped(s.Suggestions, s.SuggestionIndex, s.TypedWordsHistory)
 	if word == "" {
 		a.log("All available suggestions have been typed.", "WARNING")
-		return
+		return ""
 	}
 
 	// "Thinking" pause before typing (auto slightly longer than Shift).
@@ -284,6 +332,10 @@ func (a *App) typeNextWord(typingSource string) {
 		sleepSeconds(uniform(0.3, 0.72))
 	}
 
+	if changed := a.lettersChanged(region, s.LastOCRText); changed != "" {
+		return changed
+	}
+
 	a.log(fmt.Sprintf("Typing: '%s'", word), "INFO")
 	scale := 1.22
 	if typingSource == "auto" {
@@ -291,6 +343,16 @@ func (a *App) typeNextWord(typingSource string) {
 	}
 	typeWordHumanLike(word, s.TypingDelay, scale)
 	sleepSeconds(uniform(0.26, 0.62))
+
+	if changed := a.lettersChanged(region, s.LastOCRText); changed != "" {
+		a.log(fmt.Sprintf("Erasing '%s' (letters changed before Enter).", word), "INFO")
+		for range []rune(word) {
+			input.PressBackspace()
+			sleepSeconds(uniform(0.03, 0.08))
+		}
+		return changed
+	}
+
 	input.PressEnter()
 
 	a.state.AddTypingRecord(word, s.LastOCRText)
@@ -306,6 +368,7 @@ func (a *App) typeNextWord(typingSource string) {
 			}
 		}
 	})
+	return ""
 }
 
 // ---- alt+1 (definitions) -------------------------------------------------
@@ -329,9 +392,10 @@ func (a *App) handleAlt1Async() {
 	a.log("Processing WBT...", "INFO")
 	// Wait for any running action; hold the lock only for OCR + fetch, not the popup.
 	a.actionMu.Lock()
-	word, ok := a.ocr.PerformOCR(*s.Region)
+	word := a.stableOCR(*s.Region)
+	ok := word != ""
 	var defs []string
-	if ok && word != "" {
+	if ok {
 		defs = a.api.Definitions(word)
 	}
 	a.actionMu.Unlock()
@@ -556,6 +620,12 @@ func (a *App) autoModeWatcher() {
 		}
 
 		if letters != a.getLastHandled() {
+			// Confirm on consecutive captures so a one-off misread is never typed.
+			letters = a.stableOCR(*s.Region)
+			if letters == "" || letters == a.getLastHandled() {
+				time.Sleep(poll)
+				continue
+			}
 			gateOK, turnOCR := a.autoModeTurnOK()
 			if !gateOK {
 				if s.TurnRegion != nil && now.Sub(lastWarnGate) > 8*time.Second {
