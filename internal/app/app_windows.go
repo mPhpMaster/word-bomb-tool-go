@@ -22,6 +22,7 @@ import (
 	"github.com/mphpmaster/word-bomb-tool-go/internal/suggest"
 	"github.com/mphpmaster/word-bomb-tool-go/internal/ui"
 	"github.com/mphpmaster/word-bomb-tool-go/internal/winocr"
+	"github.com/mphpmaster/word-bomb-tool-go/internal/wordlist"
 )
 
 // App is the running application.
@@ -261,6 +262,17 @@ func (a *App) handleShiftAsync(typingSource, letters string) {
 func (a *App) handleLetters(letters, typingSource string, region *config.Region) string {
 	a.setLastHandled(letters)
 
+	// Prompts are Latin (English list) or Arabic (Arabic list); anything else is
+	// a misread. A single letter is a partial read, not a prompt.
+	if !ocr.IsLatinPrompt(letters) && !ocr.IsArabicPrompt(letters) {
+		a.log(fmt.Sprintf("Unrecognised letters '%s', nothing typed.", letters), "WARNING")
+		return ""
+	}
+	if len([]rune(letters)) < 2 {
+		a.log(fmt.Sprintf("Ignoring one-letter read '%s' (prompts have 2+ letters).", letters), "WARNING")
+		return ""
+	}
+
 	s := a.state.Snapshot()
 	mode := config.SearchModes[clampIndex(s.CurrentModeIndex, len(config.SearchModes))]
 
@@ -271,12 +283,15 @@ func (a *App) handleLetters(letters, typingSource string, region *config.Region)
 	a.state.Mutate(func(st *state.AppState) { st.LastOCRText = letters })
 	a.log(fmt.Sprintf("--- WBT: %s ---", letters), "INFO")
 
-	suggestions := a.api.Suggestions(letters, mode)
+	suggestions := a.suggestions(letters, mode)
 	a.state.Mutate(func(st *state.AppState) { st.APIStatus = a.api.Status() })
 
 	if len(suggestions) > 0 {
 		s = a.state.Snapshot()
 		suggestions = suggest.Sort(suggestions, config.SortModes[clampIndex(s.CurrentSortModeIndex, len(config.SortModes))])
+		if len(suggestions) > config.MaxSuggestionsDisplay {
+			suggestions = suggestions[:config.MaxSuggestionsDisplay]
+		}
 		a.state.Mutate(func(st *state.AppState) {
 			st.Suggestions = suggestions
 			st.SuggestionIndex = 0
@@ -296,9 +311,44 @@ func (a *App) handleLetters(letters, typingSource string, region *config.Region)
 			st.Suggestions = nil
 			st.SuggestionIndex = 0
 		})
+		// Distinguish "the API didn't answer" from "no words for these letters".
+		if status := a.api.Status(); status != config.StatusOnline {
+			a.log(fmt.Sprintf("No suggestions: API %s (letters: '%s').", status, letters), "WARNING")
+		}
 	}
 
 	return a.typeNextWord(typingSource, region)
+}
+
+// suggestions returns words for the letters: from the built-in word lists for
+// Starts With / Ends With / Contains (a few ms, offline), from Datamuse for
+// Rhymes and Related Words.
+func (a *App) suggestions(letters, mode string) []string {
+	// Datamuse is English-only, so an Arabic prompt is always matched against
+	// the Arabic list (as Contains when Rhymes/Related Words is selected).
+	if wordlist.IsArabic(letters) && !wordlist.Supports(mode) {
+		mode = "Contains"
+	}
+	if wordlist.Supports(mode) {
+		start := time.Now()
+		search := wordlist.FixILConfusion(letters, mode)
+		if search != letters {
+			a.log(fmt.Sprintf("Reading '%s' as '%s' (I/L look-alike).", letters, search), "INFO")
+		}
+		local := wordlist.Search(search, mode)
+		logging.Infof("Word list: %d matches for '%s' in %.1fms", len(local), search, float64(time.Since(start).Microseconds())/1000.0)
+		// No word contains these letters, so they were misread. Asking Datamuse
+		// here used to return junk such as "noczim" and type it.
+		if len(local) == 0 {
+			a.log(fmt.Sprintf("No word contains '%s', so it is probably a misread; nothing typed.", letters), "WARNING")
+		}
+		return local
+	}
+
+	start := time.Now()
+	result := a.api.Suggestions(letters, mode)
+	a.state.RecordAPICall(a.api.Status() == config.StatusOnline, float64(time.Since(start).Microseconds())/1000.0)
+	return result
 }
 
 // typeNextWord types the next untyped suggestion. With a region, the letters are
@@ -754,6 +804,8 @@ func (a *App) Run() error {
 	a.registerHotkeys()
 	go a.hook.Start()
 	go a.autoModeWatcher()
+	// Load the word lists now so the first prompt doesn't pay for it.
+	wordlist.Preload()
 	// Off the UI thread and after the window is up: without the Windows engine
 	// this can prompt, download and run the Tesseract installer.
 	go a.checkOCR()

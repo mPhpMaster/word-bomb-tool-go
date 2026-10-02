@@ -1,5 +1,7 @@
 // Command wordbombcli is the GUI-less interface to the Word Bomb Tool: word
-// suggestions and definitions via the Datamuse API. It is the Go port of cli.py.
+// suggestions from the built-in English/Arabic word lists (Starts With, Ends
+// With, Contains) or the Datamuse API (Rhymes, Related Words), and definitions
+// via Datamuse. It is the Go port of cli.py.
 package main
 
 import (
@@ -13,6 +15,7 @@ import (
 	"github.com/mphpmaster/word-bomb-tool-go/internal/config"
 	"github.com/mphpmaster/word-bomb-tool-go/internal/datamuse"
 	"github.com/mphpmaster/word-bomb-tool-go/internal/suggest"
+	"github.com/mphpmaster/word-bomb-tool-go/internal/wordlist"
 )
 
 var searchAliases = map[string]string{
@@ -101,7 +104,7 @@ func run(argv []string) int {
 }
 
 func usage() {
-	fmt.Fprintln(os.Stderr, "wbt — Word Bomb Tool CLI (word suggestions and definitions via Datamuse)")
+	fmt.Fprintln(os.Stderr, "wbt — Word Bomb Tool CLI (word suggestions from the built-in word lists or Datamuse, definitions via Datamuse)")
 	fmt.Fprintln(os.Stderr, "\nCommands:")
 	fmt.Fprintln(os.Stderr, "  suggest LETTERS [--mode M] [--sort S] [--limit N] [--json] [--pretty-json]")
 	fmt.Fprintln(os.Stderr, "  define WORD [--json] [--pretty-json]")
@@ -150,8 +153,20 @@ func cmdSuggest(argv []string) int {
 		return 2
 	}
 
+	// Datamuse is English-only, so Arabic letters always search the Arabic list
+	// (as Contains for Rhymes / Related Words).
+	if wordlist.IsArabic(letters) && !wordlist.Supports(searchMode) {
+		searchMode = "Contains"
+	}
 	client := datamuse.New()
-	raw := client.Suggestions(letters, searchMode)
+	var raw []string
+	source := "datamuse"
+	if wordlist.Supports(searchMode) {
+		source = "word list"
+		raw = wordlist.Search(wordlist.FixILConfusion(letters, searchMode), searchMode)
+	} else {
+		raw = client.Suggestions(letters, searchMode)
+	}
 	words := suggest.Sort(raw, sMode)
 	if len(words) > lim {
 		words = words[:lim]
@@ -162,13 +177,18 @@ func cmdSuggest(argv []string) int {
 			"letters":     letters,
 			"search_mode": searchMode,
 			"sort_mode":   sMode,
+			"source":      source,
 			"api_status":  client.Status(),
 			"words":       words,
 		}, *prettyJSON)
 		return 0
 	}
 
-	fmt.Printf("search: %s  sort: %s  api: %s\n", searchMode, sMode, client.Status())
+	if source == "datamuse" {
+		fmt.Printf("search: %s  sort: %s  api: %s\n", searchMode, sMode, client.Status())
+	} else {
+		fmt.Printf("search: %s  sort: %s  source: %s\n", searchMode, sMode, source)
+	}
 	if len(words) == 0 {
 		fmt.Println("(no words)")
 		return 0
