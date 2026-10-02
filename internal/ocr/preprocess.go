@@ -12,6 +12,18 @@ import (
 func toGray(src image.Image) *image.Gray {
 	b := src.Bounds()
 	dst := image.NewGray(image.Rect(0, 0, b.Dx(), b.Dy()))
+	if rgba, ok := src.(*image.RGBA); ok {
+		// Fast path for screen captures: read the pixels directly instead of
+		// going through At() per pixel.
+		for y := 0; y < b.Dy(); y++ {
+			row := rgba.Pix[(b.Min.Y+y-rgba.Rect.Min.Y)*rgba.Stride+(b.Min.X-rgba.Rect.Min.X)*4:]
+			for x := 0; x < b.Dx(); x++ {
+				r, g, bl := uint32(row[x*4]), uint32(row[x*4+1]), uint32(row[x*4+2])
+				dst.Pix[y*dst.Stride+x] = uint8((299*r + 587*g + 114*bl) / 1000)
+			}
+		}
+		return dst
+	}
 	for y := 0; y < b.Dy(); y++ {
 		for x := 0; x < b.Dx(); x++ {
 			r, g, bl, _ := src.At(b.Min.X+x, b.Min.Y+y).RGBA()

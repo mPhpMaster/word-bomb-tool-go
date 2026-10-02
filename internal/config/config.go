@@ -5,6 +5,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 )
 
@@ -106,6 +107,17 @@ const (
 	TurnGateNeedYour = "your"
 	TurnGateNeedTurn = "turn"
 )
+
+// TurnGateAccepts reports whether the turn-region OCR text (letters and digits,
+// lowercased) says "YOUR TURN".
+func TurnGateAccepts(text string) bool {
+	if text == "" {
+		return false
+	}
+	hasYour := strings.Contains(text, TurnGateNeedYour)
+	hasTurn := strings.Contains(text, TurnGateNeedTurn)
+	return (hasYour && hasTurn) || strings.Contains(text, "yourturn") || (hasYour && len(text) >= 4)
+}
 
 // ClampOCRInterval clamps an OCR poll interval; invalid values fall back to the
 // default OCRInterval.

@@ -21,6 +21,7 @@ import (
 	"github.com/mphpmaster/word-bomb-tool-go/internal/state"
 	"github.com/mphpmaster/word-bomb-tool-go/internal/suggest"
 	"github.com/mphpmaster/word-bomb-tool-go/internal/ui"
+	"github.com/mphpmaster/word-bomb-tool-go/internal/winocr"
 )
 
 // App is the running application.
@@ -86,15 +87,6 @@ func (a *App) submit(fn func()) {
 
 // ---- turn gate -----------------------------------------------------------
 
-func (a *App) turnGateAccepts(text string) bool {
-	if text == "" {
-		return false
-	}
-	hasYour := strings.Contains(text, config.TurnGateNeedYour)
-	hasTurn := strings.Contains(text, config.TurnGateNeedTurn)
-	return (hasYour && hasTurn) || strings.Contains(text, "yourturn") || (hasYour && len(text) >= 4)
-}
-
 // autoModeTurnOK reports whether auto mode may type now, plus the turn OCR text.
 func (a *App) autoModeTurnOK() (bool, string) {
 	s := a.state.Snapshot()
@@ -105,7 +97,7 @@ func (a *App) autoModeTurnOK() (bool, string) {
 	if text == "" {
 		return false, ""
 	}
-	return a.turnGateAccepts(text), text
+	return config.TurnGateAccepts(text), text
 }
 
 // ---- display text --------------------------------------------------------
@@ -684,9 +676,44 @@ func (a *App) checkAndInstallTesseract() bool {
 		return false
 	}
 
-	// Re-resolve after installation.
-	a.ocr = ocr.NewProcessor()
+	// Available re-resolves the tesseract path after installation. (Replacing
+	// a.ocr here would race with the auto-mode watcher, which reads it.)
 	return a.ocr.Available()
+}
+
+// checkOCR reports which OCR engine reads the letters. Windows' built-in engine
+// does the reading; Tesseract is only needed (and only offered for install)
+// when Windows has no OCR language at all.
+func (a *App) checkOCR() {
+	defer func() {
+		if r := recover(); r != nil {
+			a.log(fmt.Sprintf("OCR check failed: %v", r), "ERROR")
+		}
+	}()
+	en, ar := winocr.LanguageTag("en"), winocr.LanguageTag("ar")
+	for _, l := range []struct{ prefix, tag string }{{"en", en}, {"ar", ar}} {
+		if l.tag != "" {
+			logging.Infof("Windows OCR (%s): using %s", l.prefix, l.tag)
+		} else {
+			logging.Infof("Windows OCR (%s): no OCR language installed", l.prefix)
+		}
+	}
+	if en != "" {
+		msg := "OCR: Windows built-in engine (fast, " + en
+		if ar != "" {
+			msg += " + " + ar
+		} else {
+			msg += "; install the Arabic OCR language in Windows Settings to read Arabic prompts"
+		}
+		a.log(msg+").", "INFO")
+		return
+	}
+	if err := winocr.InitError(); err != nil {
+		logging.Warnf("Windows OCR unavailable: %v", err)
+	}
+	if !a.checkAndInstallTesseract() {
+		a.log("Tesseract is required for OCR features.", "WARNING")
+	}
 }
 
 // ---- lifecycle ------------------------------------------------------------
@@ -695,10 +722,6 @@ func (a *App) checkAndInstallTesseract() bool {
 // auto-mode watcher, and enters the GUI message loop.
 func (a *App) Run() error {
 	logging.Infof("========== WBT STARTED ==========")
-
-	if !a.checkAndInstallTesseract() {
-		a.log("Tesseract is required for OCR features.", "WARNING")
-	}
 
 	overlay, err := ui.NewRegionOverlay()
 	if err != nil {
@@ -731,6 +754,9 @@ func (a *App) Run() error {
 	a.registerHotkeys()
 	go a.hook.Start()
 	go a.autoModeWatcher()
+	// Off the UI thread and after the window is up: without the Windows engine
+	// this can prompt, download and run the Tesseract installer.
+	go a.checkOCR()
 
 	a.logWin.Run()
 	return nil

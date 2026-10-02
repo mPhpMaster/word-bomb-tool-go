@@ -14,6 +14,7 @@ require (
 	github.com/gen2brain/shm v0.1.0 // indirect
 	github.com/godbus/dbus/v5 v5.1.0 // indirect
 	github.com/jezek/xgb v1.1.1 // indirect
+	golang.org/x/text v0.17.0 // indirect
 	gopkg.in/Knetic/govaluate.v3 v3.0.0+incompatible // indirect
 )
 
@@ -23,5 +24,6 @@ require (
 replace (
 	golang.org/x/image => github.com/golang/image v0.19.0
 	golang.org/x/sys => github.com/golang/sys v0.24.0
+	golang.org/x/text => github.com/golang/text v0.17.0
 	gopkg.in/Knetic/govaluate.v3 => github.com/Knetic/govaluate v3.0.0+incompatible
 )

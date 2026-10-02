@@ -1,7 +1,9 @@
-// Package ocr captures screen regions and runs Tesseract on them. It is the Go
-// port of ocr_processor.py. Rather than binding libtesseract, it shells out to
-// the tesseract executable (found on PATH or at the default install location),
-// so no CGO is required.
+// Package ocr captures screen regions and reads the prompt letters. It is the
+// Go port of ocr_processor.py. Letters are read in-process with the OCR engine
+// built into Windows (see package winocr); Tesseract is only used when Windows
+// has no OCR language installed. Rather than binding libtesseract, it shells
+// out to the tesseract executable (found on PATH or at the default install
+// location), so no CGO is required.
 package ocr
 
 import (
@@ -21,6 +23,7 @@ import (
 	"github.com/kbinani/screenshot"
 	"github.com/mphpmaster/word-bomb-tool-go/internal/config"
 	"github.com/mphpmaster/word-bomb-tool-go/internal/logging"
+	"github.com/mphpmaster/word-bomb-tool-go/internal/winocr"
 )
 
 const letterWhitelist = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
@@ -108,6 +111,17 @@ func (p *Processor) performOCR(region config.Region) (letters string, ok bool) {
 		return cached, cached != ""
 	}
 
+	// Windows' built-in engine: in-process and ~5-10ms. Tesseract (a new process
+	// per run, ~0.5s each) is only used when Windows has no OCR language at all.
+	if WindowsOCRAvailable() {
+		letters = ReadPrompt(img)
+		if letters != "" {
+			p.cachePut(hash, letters)
+		}
+		logging.Infof("WBT completed in %.2fms (%q, Windows OCR)", float64(time.Since(start).Microseconds())/1000.0, letters)
+		return letters, letters != ""
+	}
+
 	pre := preprocessLetters(img)
 	raw, err := p.runTesseract(pre, "--psm", "7", "-c", "tessedit_char_whitelist="+letterWhitelist)
 	if err != nil {
@@ -115,7 +129,7 @@ func (p *Processor) performOCR(region config.Region) (letters string, ok bool) {
 		return "", false
 	}
 
-	letters = keepLetters(raw)
+	letters = KeepLetters(raw)
 	if letters != "" {
 		p.cachePut(hash, letters)
 	}
@@ -149,6 +163,17 @@ func (p *Processor) performOCRTurnGate(region config.Region) string {
 
 	// 1) Soft path (colored buttons + white text).
 	soft := preprocessTurnGate(img)
+
+	// "YOUR TURN" is ordinary words, which the in-process Windows engine reads
+	// directly. Tesseract's up-to-7 launches only run without that engine.
+	if WindowsOCRAvailable() {
+		text, err := winocr.Recognize(soft, "en")
+		if err != nil {
+			logging.Errorf("Turn gate Windows OCR error: %v", err)
+		}
+		return keepAlnum(text)
+	}
+
 	best := ""
 	for _, psm := range []string{"6", "7", "8", "13"} {
 		if t := run(soft, psm); len(t) > len(best) {
@@ -224,16 +249,6 @@ func capture(region config.Region) (*image.RGBA, error) {
 func hashImage(img *image.RGBA) string {
 	sum := md5.Sum(img.Pix)
 	return hex.EncodeToString(sum[:])
-}
-
-func keepLetters(s string) string {
-	var b strings.Builder
-	for _, r := range s {
-		if unicode.IsLetter(r) {
-			b.WriteRune(unicode.ToLower(r))
-		}
-	}
-	return b.String()
 }
 
 func keepAlnum(s string) string {
