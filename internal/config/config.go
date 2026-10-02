@@ -90,7 +90,12 @@ const (
 	// one-off misreads of transition frames (letters animating in / fading out).
 	// Up to OCRStableAttempts captures, OCRStableGap apart.
 	OCRStableAttempts = 5
-	OCRStableGap      = 120 * time.Millisecond
+	OCRStableGap      = 40 * time.Millisecond
+	// A change of letters is only trusted after ChangeConfirmReads identical
+	// reads in a row (out of at most ChangeConfirmMaxReads); any read of the
+	// expected letters means they did not change.
+	ChangeConfirmReads    = 3
+	ChangeConfirmMaxReads = 6
 	// MaxLetterChanges is how many times one action may switch to newly read
 	// letters before giving up.
 	MaxLetterChanges = 3

@@ -215,16 +215,47 @@ func (a *App) stableOCR(region config.Region) string {
 	return ""
 }
 
-// lettersChanged re-reads the letters and returns them if they differ from
-// expected, otherwise "".
+// lettersChanged re-reads the letters; it returns the new letters if they
+// really changed from expected, otherwise "". While the bomb shakes the reading
+// flickers between look-alikes ("ump" -> "ume" -> "ump"), and treating each
+// flicker as a change erased correct words and cost seconds. So any read that
+// still shows the expected letters means "unchanged", and a change needs
+// ChangeConfirmReads identical reads in a row of letters some word contains.
 func (a *App) lettersChanged(region *config.Region, expected string) string {
 	if region == nil || expected == "" {
 		return ""
 	}
-	if current := a.stableOCR(*region); current != "" && current != expected {
-		return current
+	candidate, streak := "", 0
+	for i := 0; i < config.ChangeConfirmMaxReads; i++ {
+		if i > 0 {
+			time.Sleep(config.OCRStableGap)
+		}
+		cur, ok := a.ocr.PerformOCR(*region)
+		if !ok || cur == "" {
+			streak = 0
+			continue
+		}
+		if cur == expected {
+			return ""
+		}
+		if cur == candidate {
+			streak++
+		} else {
+			candidate, streak = cur, 1
+		}
+		if streak >= config.ChangeConfirmReads && isPlausiblePrompt(cur) {
+			return cur
+		}
 	}
 	return ""
+}
+
+// isPlausiblePrompt reports whether the letters are Latin letters some English
+// word contains, or Arabic letters some Arabic word contains.
+func isPlausiblePrompt(letters string) bool {
+	return (ocr.IsLatinPrompt(letters) || ocr.IsArabicPrompt(letters)) &&
+		len([]rune(letters)) >= 2 &&
+		wordlist.Any(letters, "Contains")
 }
 
 // handleShiftAsync reads letters, fetches suggestions and types the first/next
