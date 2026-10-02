@@ -50,6 +50,12 @@ func sendInputs(in []inputStruct) {
 // TypeRune sends a single Unicode rune as a key down + key up pair. Runes
 // outside the BMP are sent as UTF-16 surrogate pairs.
 func TypeRune(r rune) {
+	sendInputs(runeInputs(r))
+}
+
+// runeInputs builds the KEYEVENTF_UNICODE key down/up events for a rune, so any
+// script (such as Arabic) is typed without a matching keyboard layout.
+func runeInputs(r rune) []inputStruct {
 	units := utf16.Encode([]rune{r})
 	in := make([]inputStruct, 0, len(units)*2)
 	for _, u := range units {
@@ -58,7 +64,7 @@ func TypeRune(r rune) {
 			unicodeInput(u, keyEventUnicode|keyEventKeyUp),
 		)
 	}
-	sendInputs(in)
+	return in
 }
 
 func unicodeInput(unit uint16, flags uint32) inputStruct {

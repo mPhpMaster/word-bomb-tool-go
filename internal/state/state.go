@@ -49,6 +49,7 @@ type AppState struct {
 	TotalTypedCount      int
 	TypingDelay          float64
 	OCRInterval          float64
+	FastTyping           bool
 	APIStatus            string
 	Metrics              Metrics
 }
@@ -60,6 +61,7 @@ func newAppState() AppState {
 		TypedWordsHistory:    make(map[string]struct{}),
 		TypingDelay:          config.TypingDelay,
 		OCRInterval:          config.OCRInterval,
+		FastTyping:           true,
 		APIStatus:            config.StatusOnline,
 		Metrics:              Metrics{SessionStartTime: time.Now()},
 	}
@@ -176,6 +178,7 @@ type persistedConfig struct {
 	TotalTypedCount   int            `json:"total_typed_count"`
 	TypingDelay       float64        `json:"typing_delay"`
 	OCRInterval       float64        `json:"ocr_interval"`
+	FastTyping        bool           `json:"fast_typing"`
 }
 
 // SaveState writes the persisted settings to ocr_config.json.
@@ -189,6 +192,7 @@ func (m *Manager) SaveState() {
 		TotalTypedCount:  m.state.TotalTypedCount,
 		TypingDelay:      m.state.TypingDelay,
 		OCRInterval:      m.state.OCRInterval,
+		FastTyping:       m.state.FastTyping,
 	}
 	m.mu.RUnlock()
 
@@ -268,6 +272,13 @@ func (m *Manager) LoadState() {
 		var f float64
 		if json.Unmarshal(v, &f) == nil {
 			m.state.OCRInterval = config.ClampOCRInterval(f)
+		}
+	}
+	// Missing (configs written before fast typing existed) keeps the default, on.
+	if v, ok := raw["fast_typing"]; ok {
+		var b bool
+		if json.Unmarshal(v, &b) == nil {
+			m.state.FastTyping = b
 		}
 	}
 	logging.Infof("Configuration loaded from file")

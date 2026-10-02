@@ -61,6 +61,17 @@ func typeWordHumanLike(word string, baseDelay, interKeyScale float64) {
 	}
 }
 
+// typeWordFast types a word with a fixed short gap between keys.
+func typeWordFast(word string, keyGap time.Duration) {
+	runes := []rune(word)
+	for i, ch := range runes {
+		input.TypeRune(ch)
+		if i < len(runes)-1 && keyGap > 0 {
+			time.Sleep(keyGap)
+		}
+	}
+}
+
 // uniform returns a random float in [a,b).
 func uniform(a, b float64) float64 { return a + rand.Float64()*(b-a) }
 

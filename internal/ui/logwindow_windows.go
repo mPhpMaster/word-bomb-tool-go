@@ -113,6 +113,7 @@ func (lw *LogWindow) optionsMenu() []decl.MenuItem {
 		decl.Menu{Text: "Sort Mode", Items: sortItems},
 		decl.Action{Text: "Typing delay...", OnTriggered: lw.cb.SetTypingDelay},
 		decl.Action{Text: "OCR interval...", OnTriggered: lw.cb.SetOCRInterval},
+		decl.Action{Text: "Fast typing (on/off)", OnTriggered: lw.cb.ToggleFastTyping},
 		decl.Separator{},
 		decl.Action{Text: "Clear Typed History\tDelete", OnTriggered: lw.cb.ClearHistory},
 		decl.Action{Text: "Undo Last Word\tCtrl+Z", OnTriggered: lw.cb.UndoWord},

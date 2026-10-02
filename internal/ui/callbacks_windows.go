@@ -16,5 +16,6 @@ type Callbacks struct {
 	FetchDefinitions func()
 	SetTypingDelay   func()
 	SetOCRInterval   func()
+	ToggleFastTyping func()
 	Exit             func()
 }

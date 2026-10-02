@@ -100,6 +100,11 @@ const (
 	// letters before giving up.
 	MaxLetterChanges = 3
 
+	// Fast typing (the default): no "thinking" pause, a fixed short gap between
+	// keys and a short pause before Enter.
+	FastTypingKeyGap     = 12 * time.Millisecond
+	FastTypingEnterPause = 25 * time.Millisecond
+
 	// TypingDelay is the default typical seconds between keystrokes.
 	TypingDelay    = 0.28
 	TypingDelayMin = 0.01

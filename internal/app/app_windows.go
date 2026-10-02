@@ -115,16 +115,21 @@ func (a *App) stateText() string {
 	if s.AutoModeActive {
 		auto = "On"
 	}
+	fast := "Off (human-like delays)"
+	if s.FastTyping {
+		fast = "On"
+	}
 	return fmt.Sprintf(`
 Current Mode: %s
 Current Sort: %s
 Typing delay: %gs (~avg between keys)
 OCR interval: %gs (auto mode poll)
+Fast typing: %s
 Auto mode only on your turn: %s
 Auto Mode: %s
 Words Typed: %d
 API Status: %s
-`, mode, sortMode, s.TypingDelay, s.OCRInterval, tg, auto, s.TotalTypedCount, s.APIStatus)
+`, mode, sortMode, s.TypingDelay, s.OCRInterval, fast, tg, auto, s.TotalTypedCount, s.APIStatus)
 }
 
 func (a *App) helpText() string {
@@ -398,24 +403,31 @@ func (a *App) typeNextWord(typingSource string, region *config.Region) string {
 		return ""
 	}
 
-	// "Thinking" pause before typing (auto slightly longer than Shift).
-	if typingSource == "auto" {
-		sleepSeconds(uniform(0.52, 1.12))
+	if s.FastTyping {
+		// The letters were read moments ago, so there is nothing to re-check yet.
+		a.log(fmt.Sprintf("Typing: '%s'", word), "INFO")
+		typeWordFast(word, config.FastTypingKeyGap)
+		time.Sleep(config.FastTypingEnterPause)
 	} else {
-		sleepSeconds(uniform(0.3, 0.72))
-	}
+		// "Thinking" pause before typing (auto slightly longer than Shift).
+		if typingSource == "auto" {
+			sleepSeconds(uniform(0.52, 1.12))
+		} else {
+			sleepSeconds(uniform(0.3, 0.72))
+		}
 
-	if changed := a.lettersChanged(region, s.LastOCRText); changed != "" {
-		return changed
-	}
+		if changed := a.lettersChanged(region, s.LastOCRText); changed != "" {
+			return changed
+		}
 
-	a.log(fmt.Sprintf("Typing: '%s'", word), "INFO")
-	scale := 1.22
-	if typingSource == "auto" {
-		scale = 1.32
+		a.log(fmt.Sprintf("Typing: '%s'", word), "INFO")
+		scale := 1.22
+		if typingSource == "auto" {
+			scale = 1.32
+		}
+		typeWordHumanLike(word, s.TypingDelay, scale)
+		sleepSeconds(uniform(0.26, 0.62))
 	}
-	typeWordHumanLike(word, s.TypingDelay, scale)
-	sleepSeconds(uniform(0.26, 0.62))
 
 	if changed := a.lettersChanged(region, s.LastOCRText); changed != "" {
 		a.log(fmt.Sprintf("Erasing '%s' (letters changed before Enter).", word), "INFO")
@@ -606,6 +618,20 @@ func (a *App) setTypingDelay() {
 		a.state.SaveState()
 		a.log(fmt.Sprintf("Typing delay set to %g s per character.", val), "INFO")
 	})
+}
+
+func (a *App) toggleFastTyping() {
+	var on bool
+	a.state.Mutate(func(st *state.AppState) {
+		st.FastTyping = !st.FastTyping
+		on = st.FastTyping
+	})
+	a.state.SaveState()
+	if on {
+		a.log("Fast typing ON (no pauses).", "INFO")
+	} else {
+		a.log("Fast typing OFF (human-like typing delays).", "INFO")
+	}
 }
 
 func (a *App) setOCRInterval() {
@@ -859,6 +885,7 @@ func (a *App) callbacks() ui.Callbacks {
 		FetchDefinitions: a.handleAlt1Press,
 		SetTypingDelay:   a.setTypingDelay,
 		SetOCRInterval:   a.setOCRInterval,
+		ToggleFastTyping: a.toggleFastTyping,
 		Exit:             func() { a.gracefulExit(0) },
 	}
 }
