@@ -17,6 +17,7 @@ import (
 var (
 	user32                          = windows.NewLazySystemDLL("user32.dll")
 	procSetLayeredWindowAttributes  = user32.NewProc("SetLayeredWindowAttributes")
+	procSetWindowDisplayAffinity    = user32.NewProc("SetWindowDisplayAffinity")
 )
 
 const (
@@ -64,6 +65,16 @@ func setWindowColorKey(hwnd win.HWND, key uint32) {
 func addExStyle(hwnd win.HWND, style int32) {
 	cur := win.GetWindowLong(hwnd, win.GWL_EXSTYLE)
 	win.SetWindowLong(hwnd, win.GWL_EXSTYLE, cur|style)
+}
+
+// wdaExcludeFromCapture keeps a window out of screen captures (Windows 10
+// version 2004 and later).
+const wdaExcludeFromCapture = 0x00000011
+
+// excludeFromCapture hides the window from screen capture (BitBlt, the OCR's
+// screenshots) while leaving it visible on screen.
+func excludeFromCapture(hwnd win.HWND) {
+	procSetWindowDisplayAffinity.Call(uintptr(hwnd), wdaExcludeFromCapture)
 }
 
 // setPopupStyle replaces a window's style with WS_POPUP (frameless). WS_POPUP is

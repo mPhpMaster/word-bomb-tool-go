@@ -11,6 +11,11 @@ import (
 // colorKeyHex is punched out of the overlay windows so only their borders show.
 const colorKeyHex = "#ff00ff"
 
+// overlayOutset is the gap in pixels between the region and its border, so the
+// border is drawn outside the captured area. It used to sit on the region's
+// edge and was read as an extra "i" or "l".
+const overlayOutset = 3
+
 // borderWin is a single frameless, click-through, topmost overlay that draws a
 // colored rectangle border with a fully transparent interior.
 type borderWin struct {
@@ -31,6 +36,9 @@ func newBorderWin(borderHex string) (*borderWin, error) {
 	setPopupStyle(mw.Handle())
 	makeToolOverlay(mw.Handle())
 	setWindowColorKey(mw.Handle(), colorRef(colorKeyHex))
+	// Also keep the border out of screen captures, so the OCR never sees it even
+	// where it overlaps the region.
+	excludeFromCapture(mw.Handle())
 
 	bw.keyBrush, _ = walk.NewSolidColorBrush(parseHexColor(colorKeyHex))
 	bw.borderBr, _ = walk.NewSolidColorBrush(bw.border)
@@ -70,7 +78,8 @@ func (bw *borderWin) paint(canvas *walk.Canvas, _ walk.Rectangle) error {
 }
 
 func (bw *borderWin) show(r config.Region) {
-	bw.mw.SetBoundsPixels(walk.Rectangle{X: r.Left, Y: r.Top, Width: r.Width, Height: r.Height})
+	const o = overlayOutset
+	bw.mw.SetBoundsPixels(walk.Rectangle{X: r.Left - o, Y: r.Top - o, Width: r.Width + 2*o, Height: r.Height + 2*o})
 	bw.mw.SetVisible(true)
 	setTopmost(bw.mw.Handle())
 	bw.mw.Invalidate()
