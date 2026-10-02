@@ -11,6 +11,7 @@ type Callbacks struct {
 	ClearHistory     func()
 	UndoWord         func()
 	ShowHelp         func()
+	ShowAbout        func()
 	ToggleWindow     func()
 	FetchSuggestions func()
 	FetchDefinitions func()

@@ -52,6 +52,8 @@ func NewLogWindow(queue *logging.Queue, cb Callbacks, onVisibility func(bool)) (
 				Text: "Help",
 				Items: []decl.MenuItem{
 					decl.Action{Text: "Show Hotkeys\t.", OnTriggered: cb.ShowHelp},
+					decl.Separator{},
+					decl.Action{Text: "About Word Bomb Tool…", OnTriggered: cb.ShowAbout},
 				},
 			},
 		},
@@ -149,6 +151,7 @@ func (lw *LogWindow) setupTray() {
 	add("Fetch Definitions", lw.cb.FetchDefinitions)
 	_ = tray.ContextMenu().Actions().Add(walk.NewSeparatorAction())
 	add("Toggle Window", lw.cb.ToggleWindow)
+	add("About Word Bomb Tool…", lw.cb.ShowAbout)
 	_ = tray.ContextMenu().Actions().Add(walk.NewSeparatorAction())
 	add("Exit", lw.cb.Exit)
 

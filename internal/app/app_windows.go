@@ -758,6 +758,12 @@ func (a *App) showHelp() {
 	})
 }
 
+func (a *App) showAbout() {
+	a.logWin.Synchronize(func() {
+		ui.ShowAbout(a.logWin.MainWindow())
+	})
+}
+
 // ---- tesseract ------------------------------------------------------------
 
 func (a *App) checkAndInstallTesseract() bool {
@@ -862,7 +868,11 @@ func (a *App) Run() error {
 	go a.hook.Start()
 	go a.autoModeWatcher()
 	// Load the word lists now so the first prompt doesn't pay for it.
-	wordlist.Preload()
+	go func() {
+		start := time.Now()
+		en, ar := wordlist.Count(), wordlist.ArabicCount()
+		logging.Infof("Word lists loaded: %d English, %d Arabic words in %dms", en, ar, time.Since(start).Milliseconds())
+	}()
 	// Off the UI thread and after the window is up: without the Windows engine
 	// this can prompt, download and run the Tesseract installer.
 	go a.checkOCR()
@@ -880,6 +890,7 @@ func (a *App) callbacks() ui.Callbacks {
 		ClearHistory:     a.clearTypedHistory,
 		UndoWord:         a.undoLastWord,
 		ShowHelp:         a.showHelp,
+		ShowAbout:        a.showAbout,
 		ToggleWindow:     func() { a.logWin.ToggleVisibility() },
 		FetchSuggestions: a.handleShiftPress,
 		FetchDefinitions: a.handleAlt1Press,

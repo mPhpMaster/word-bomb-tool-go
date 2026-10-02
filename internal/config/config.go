@@ -32,6 +32,12 @@ func baseDir() string {
 	return "."
 }
 
+// AppName and Version identify the app (shown in the About window).
+const (
+	AppName = "Word Bomb Tool"
+	Version = "1.1.0"
+)
+
 // BaseDir is the resolved application base directory.
 var BaseDir = baseDir()
 
