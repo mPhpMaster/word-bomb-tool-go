@@ -130,10 +130,10 @@ func (h *Hook) proc(nCode int, wParam uintptr, lParam uintptr) uintptr {
 	if nCode == 0 {
 		switch wParam {
 		case wmKeyDown, wmSysKeyDown:
-			ks := (*kbdllHookStruct)(unsafe.Pointer(lParam))
+			ks := *(**kbdllHookStruct)(unsafe.Pointer(&lParam))
 			h.handleKeyDown(ks.vkCode)
 		case wmKeyUp, wmSysKeyUp:
-			ks := (*kbdllHookStruct)(unsafe.Pointer(lParam))
+			ks := *(**kbdllHookStruct)(unsafe.Pointer(&lParam))
 			h.mu.Lock()
 			delete(h.down, ks.vkCode)
 			h.mu.Unlock()
