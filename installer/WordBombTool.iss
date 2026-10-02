@@ -38,6 +38,9 @@ SolidCompression=yes
 WizardStyle=modern
 UninstallDisplayIcon={app}\{#MyAppExeName}
 ArchitecturesAllowed=x64compatible
+; Windows OCR (Windows.Media.Ocr) and excluding the region overlays from screen
+; capture need Windows 10 version 2004 or later.
+MinVersion=10.0.19041
 ArchitecturesInstallIn64BitMode=x64compatible
 
 [Languages]
@@ -50,6 +53,9 @@ Name: "addtopath"; Description: "Add the CLI (WordBombCLI.exe) to PATH"; GroupDe
 [Files]
 Source: "{#BinSrc}\{#MyAppExeName}"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#BinSrc}\{#MyCliExeName}"; DestDir: "{app}"; Flags: ignoreversion
+; Opened from the About window.
+Source: "{#RepoRoot}LICENSE"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#RepoRoot}THIRD_PARTY_NOTICES.md"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
 Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"
